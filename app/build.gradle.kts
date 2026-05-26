@@ -11,7 +11,7 @@ val githubRepo: String = project.findProperty("github.repo") as? String ?: "voic
 
 android {
     namespace = "com.voicefx"
-    compileSdk = 34
+    compileSdk = 35
 
     defaultConfig {
         applicationId = "com.voicefx"
@@ -49,7 +49,10 @@ android {
 
     kotlinOptions { jvmTarget = "17" }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
 
     composeOptions {
         kotlinCompilerExtensionVersion = "1.5.8"

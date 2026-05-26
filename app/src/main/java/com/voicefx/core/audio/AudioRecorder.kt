@@ -28,7 +28,6 @@ class AudioRecorder @Inject constructor(
                 setOutputFormat(MediaRecorder.OutputFormat.AAC_ADTS)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
                 setAudioSamplingRate(44100)
-                setAudioBitRate(96000)
                 setAudioChannels(1)
                 setOutputFile(file.absolutePath)
                 prepare()

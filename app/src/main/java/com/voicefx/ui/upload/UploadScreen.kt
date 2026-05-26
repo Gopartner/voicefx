@@ -106,7 +106,8 @@ fun UploadScreen(
                 )
             }
 
-            if (uiState.error != null) {
+            val errorText = uiState.error
+            if (errorText != null) {
                 Spacer(Modifier.height(16.dp))
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -116,7 +117,7 @@ fun UploadScreen(
                     )
                 ) {
                     Text(
-                        text = uiState.error,
+                        text = errorText,
                         modifier = Modifier.padding(12.dp),
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onErrorContainer

@@ -84,12 +84,12 @@ class WhatsAppHistoryScanner @Inject constructor(
 
             if (results.size >= config.maxFiles) break
 
-            val subDirs = vd.listFiles { it.isDirectory } ?: emptyArray()
+            val subDirs = vd.listFiles { f: java.io.File -> f.isDirectory } ?: emptyArray()
             for (sub in subDirs) {
-                val subFiles = sub.listFiles { file ->
-                    file.isFile &&
-                    file.length() >= config.minFileSize &&
-                    config.supportedExtensions.contains(file.extension.lowercase())
+                val subFiles = sub.listFiles { f: java.io.File ->
+                    f.isFile &&
+                    f.length() >= config.minFileSize &&
+                    config.supportedExtensions.contains(f.extension.lowercase())
                 } ?: emptyArray()
 
                 for (file in subFiles.take(config.maxFiles - results.size)) {
