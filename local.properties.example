@@ -1,0 +1,14 @@
+# VoiceFX Configuration
+# Copy this file to local.properties and fill in your values
+
+# GitHub Personal Access Token (classic) with repo and workflow scopes
+github.token=ghp_your_token_here
+
+# GitHub username or organization that owns the voicefx repo
+github.owner=your_github_username
+
+# GitHub repository name for the workflow (default: voicefx)
+github.repo=voicefx
+
+# Android SDK path (set by Android Studio)
+sdk.dir=C:\\Users\\YourUser\\AppData\\Local\\Android\\Sdk

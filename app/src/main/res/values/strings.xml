@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">VoiceFX</string>
+    <string name="record">Record</string>
+    <string name="preview">Preview</string>
+    <string name="send">Send</string>
+    <string name="cancel">Cancel</string>
+    <string name="select_voice">Select Voice</string>
+    <string name="original_voice">Original</string>
+    <string name="child_voice">Child</string>
+    <string name="teen_voice">Teen</string>
+    <string name="adult_female_voice">Adult Female</string>
+    <string name="internal_storage">Internal Storage</string>
+    <string name="sd_card">SD Card</string>
+    <string name="whatsapp_history">WhatsApp Voice Notes</string>
+    <string name="recording">Recording…</string>
+    <string name="processing">Processing…</string>
+    <string name="uploading">Uploading…</string>
+    <string name="downloading">Downloading…</string>
+    <string name="send_to_whatsapp">Send to WhatsApp</string>
+    <string name="process_on_server">Process on Server</string>
+    <string name="permission_audio_denied">Microphone permission is required to record audio.</string>
+    <string name="permission_storage_denied">Storage permission is required to access files.</string>
+    <string name="error_recording">Failed to record audio.</string>
+    <string name="error_uploading">Failed to upload audio for processing.</string>
+    <string name="error_processing">Server processing failed.</string>
+    <string name="error_share">Failed to share to WhatsApp.</string>
+    <string name="error_network">Network error. Check your connection.</string>
+    <string name="no_whatsapp">WhatsApp is not installed.</string>
+    <string name="job_pending">Waiting for server…</string>
+    <string name="job_processing">Server is processing your voice…</string>
+    <string name="job_complete">Voice processing complete!</string>
+    <string name="job_failed">Server processing failed.</string>
+    <string name="retry">Retry</string>
+    <string name="delete">Delete</string>
+    <string name="settings">Settings</string>
+    <string name="github_token_hint">GitHub Token</string>
+    <string name="session_id">Session</string>
+    <string name="status">Status</string>
+</resources>

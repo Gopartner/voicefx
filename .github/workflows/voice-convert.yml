@@ -1,0 +1,48 @@
+name: Voice Convert
+
+on:
+  repository_dispatch:
+    types: [voice-convert]
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+
+      - name: Install Python dependencies
+        run: |
+          pip install --quiet requests pydub soundfile numpy
+          # Production voice AI dependencies (uncomment when ready):
+          # pip install openvoice rvc-tts xtts-api-server
+
+      - name: Run voice conversion
+        env:
+          GH_TOKEN: ${{ secrets.VOICEFX_TOKEN }}
+          RELEASE_ID: ${{ github.event.client_payload.release_id }}
+          PRESET: ${{ github.event.client_payload.preset }}
+          SESSION_ID: ${{ github.event.client_payload.session_id }}
+          GITHUB_REPO: ${{ github.repository }}
+        run: |
+          python .github/scripts/convert.py
+
+      - name: Upload result as artifact (fallback)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conversion-result-${{ github.event.client_payload.session_id }}
+          path: output.*
+          retention-days: 1
