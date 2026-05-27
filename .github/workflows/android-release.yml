@@ -2,9 +2,8 @@ name: Android Release
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
 
 jobs:
   release:
@@ -48,7 +47,7 @@ jobs:
       - name: Generate release tag
         id: tag
         run: |
-          TAG_NAME="${GITHUB_REF_NAME:-v1.0.0-release.${{ github.run_number }}}"
+          TAG_NAME="${{ github.event.release.tag_name }}"
           echo "tag_name=$TAG_NAME" >> $GITHUB_OUTPUT
 
       - name: Create Release
