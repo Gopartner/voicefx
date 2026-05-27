@@ -2,10 +2,12 @@ package com.voicefx.core.overlay
 
 import android.content.Context
 import androidx.core.content.edit
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
+import javax.inject.Singleton
 
 sealed interface OverlayState {
     data object Hidden : OverlayState
@@ -49,7 +51,8 @@ sealed interface OverlayState {
     }
 }
 
-class OverlayStateHolder @Inject constructor(private val context: Context) {
+@Singleton
+class OverlayStateHolder @Inject constructor(@ApplicationContext private val context: Context) {
     private val _state = MutableStateFlow(OverlayState.load(context))
     val state: StateFlow<OverlayState> = _state.asStateFlow()
 
