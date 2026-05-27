@@ -65,7 +65,6 @@ class VoiceFxOverlayService : Service() {
                 }
             }
         }
-        serviceScope.launch { monitorWhatsAppForeground() }
         return START_STICKY
     }
 
@@ -106,31 +105,30 @@ class VoiceFxOverlayService : Service() {
             .build()
     }
 
-    private suspend fun monitorWhatsAppForeground() {
-        while (coroutineContext.isActive) {
-            val isWa = isWhatsAppForeground()
-            val current = overlayStateHolder.state.value
-            if (isWa && current is OverlayState.Hidden) {
-                overlayStateHolder.update(OverlayState.load(this))
-            } else if (!isWa && current !is OverlayState.Hidden) {
-                overlayStateHolder.update(OverlayState.Hidden)
-            }
-            delay(2000L)
-        }
-    }
-
     private fun isWhatsAppForeground(): Boolean {
+        val isUsageAllowed = try {
+            val appOps = getSystemService(Context.APP_OPS_SERVICE) as android.app.AppOpsManager
+            val mode = appOps.checkOpNoThrow(
+                android.app.AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(), packageName
+            )
+            mode == android.app.AppOpsManager.MODE_ALLOWED
+        } catch (_: Exception) {
+            false
+        }
+        if (!isUsageAllowed) return false
         try {
             val usageStatsManager = getSystemService(Context.USAGE_STATS_SERVICE) as UsageStatsManager
             val currentTime = System.currentTimeMillis()
             val stats = usageStatsManager.queryUsageStats(
                 UsageStatsManager.INTERVAL_DAILY,
-                currentTime - 1000,
+                currentTime - 2000,
                 currentTime
             )
             if (stats.isNotEmpty()) {
                 val recent = stats.maxByOrNull { it.lastTimeUsed } ?: return false
-                return recent.packageName in waPackages
+                val elapsed = currentTime - recent.lastTimeUsed
+                return recent.packageName in waPackages && elapsed < 3000
             }
         } catch (_: Exception) {}
         return false
