@@ -3,7 +3,10 @@ package com.voicefx.di
 import android.content.Context
 import androidx.room.Room
 import com.voicefx.BuildConfig
+import com.voicefx.core.camera.CameraHelper
+import com.voicefx.core.location.LocationHelper
 import com.voicefx.core.network.GitHubApiService
+import com.voicefx.core.overlay.OverlayStateHolder
 import com.voicefx.data.local.AppDatabase
 import com.voicefx.data.local.dao.JobDao
 import com.voicefx.data.local.dao.VoiceNoteDao
@@ -49,5 +52,17 @@ object AppModule {
                 configure(token, owner, repo)
             }
         }
+    }
+
+    @Provides
+    @Singleton
+    fun provideCameraHelper(@ApplicationContext context: Context): CameraHelper {
+        return CameraHelper(context)
+    }
+
+    @Provides
+    @Singleton
+    fun provideLocationHelper(@ApplicationContext context: Context): LocationHelper {
+        return LocationHelper(context)
     }
 }

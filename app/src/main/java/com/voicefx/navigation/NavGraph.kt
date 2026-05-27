@@ -12,6 +12,7 @@ import com.voicefx.ui.history.HistoryScreen
 import com.voicefx.ui.recorder.RecorderScreen
 import com.voicefx.ui.preview.PreviewScreen
 import com.voicefx.ui.upload.UploadScreen
+import com.voicefx.ui.settings.SettingsScreen
 
 object Routes {
     const val HOME = "home"
@@ -20,6 +21,9 @@ object Routes {
     const val RECORDER = "recorder/{preset}"
     const val UPLOAD = "upload/{audioUri}/{preset}"
     const val PREVIEW = "preview/{audioUri}"
+    const val SETTINGS = "settings"
+    const val CAMERA_TAB = "camera_tab"
+    const val LOCATION_TAB = "location_tab"
 
     fun picker(source: String) = "picker/$source"
     fun recorder(preset: String) = "recorder/$preset"
@@ -109,6 +113,32 @@ fun VoiceFXNavGraph(navController: NavHostController) {
                 onNavigateHome = {
                     navController.navigate(Routes.HOME) {
                         popUpTo(Routes.HOME) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onNavigateBack = { navController.popBackStack() })
+        }
+        composable(Routes.CAMERA_TAB) {
+            // Camera placeholder - will navigate to recorder with captured photo
+            com.voicefx.ui.picker.FilePickerScreen(
+                source = "camera",
+                onNavigateBack = { navController.popBackStack() },
+                onFileSelected = { uri ->
+                    navController.navigate(Routes.preview(uri.toString())) {
+                        popUpTo(Routes.HOME)
+                    }
+                }
+            )
+        }
+        composable(Routes.LOCATION_TAB) {
+            com.voicefx.ui.picker.FilePickerScreen(
+                source = "location",
+                onNavigateBack = { navController.popBackStack() },
+                onFileSelected = { uri ->
+                    navController.navigate(Routes.preview(uri.toString())) {
+                        popUpTo(Routes.HOME)
                     }
                 }
             )

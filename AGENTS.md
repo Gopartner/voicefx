@@ -1,213 +1,726 @@
-# VoiceFX — Agents Guide
+# VoiceFX — AGENTS.md
 
 ## Project Overview
 
-VoiceFX is an Android application that integrates with WhatsApp/WhatsApp Business to record, process, and send voice notes with selectable voice presets (Original, Child, Teen, Adult Female). Heavy voice processing is offloaded to GitHub Actions Runner; the Android device stays lightweight.
+VoiceFX is a production-ready Android application for:
 
-## Architecture
+- WhatsApp
+- WhatsApp Business
 
-```
-┌─────────────────┐     upload audio via GitHub Release API     ┌──────────────────────┐
-│  Android App     │ ──────────────────────────────────────────> │  GitHub Actions       │
-│  (Kotlin/Compose) │ <────────────────────────────────────────── │  Runner (convert.py)  │
-│  (light client)  │     download result + cleanup Release       │  (ffmpeg pitch shift) │
-└─────────────────┘                                              │  (future: OpenVoice)  │
-                                                                 └──────────────────────┘
-```
+Main goal:
 
-### Android Responsibilities (LOCAL)
-- UI rendering (Jetpack Compose + Material 3)
-- Audio recording (MediaRecorder AAC)
-- File picking (Storage Access Framework)
-- WhatsApp history scanning (MediaStore + direct fs)
-- Audio preview (Media3 ExoPlayer)
-- WhatsApp share (Intent ACTION_SEND)
-- Queue management & upload (OkHttp → GitHub API)
-- Result polling & download
-- Room DB caching (voice notes + job history)
+Users can:
 
-### GitHub Runner Responsibilities (REMOTE)
-- Voice conversion (ffmpeg pitch shift — MVP)
-- AI inference (OpenVoice/RVC/XTTS — future)
-- OGG/Opus encoding for WhatsApp
-- Temporary artifact storage via Releases
+- record voice
+- pick audio from storage
+- pick WhatsApp historical voice notes
+- choose voice preset
+- convert remotely
+- preview
+- send back to WhatsApp as native voice note
 
-## Tech Stack
+Receiver must see:
 
-| Component | Choice |
-|-----------|--------|
-| Language | Kotlin 1.9.22 |
-| UI | Jetpack Compose + Material 3 |
-| DI | Hilt 2.50 |
-| DB | Room 2.6.1 |
-| Audio Record | MediaRecorder (AAC) |
-| Audio Playback | Media3 ExoPlayer 1.2.1 |
-| Network | OkHttp 4.12 |
-| Navigation | Navigation Compose 2.7.7 |
-| Build | Gradle 8.5 + KSP |
-| Min SDK | 26 (Android 8.0) |
-| Target SDK | 34 (Android 14) |
-| GitHub Runner | Python 3.12 + ffmpeg |
+- waveform
+- play button
+- duration
 
-## Project Structure
+as a normal WhatsApp voice note.
 
-```
-voicefx/
-├── .github/
-│   ├── workflows/voice-convert.yml
-│   └── scripts/convert.py
-├── app/
-│   └── src/main/java/com/voicefx/
-│       ├── di/              ← Hilt modules
-│       ├── navigation/      ← NavGraph (7 routes)
-│       ├── core/
-│       │   ├── audio/       ← AudioRecorder, AudioPlayer
-│       │   ├── storage/     ← FilePickerHelper
-│       │   ├── whatsapp/     ← HistoryScanner, ShareHelper
-│       │   ├── network/     ← GitHubApiService
-│       │   ├── queue/       ← UploadQueueManager
-│       │   └── model/       ← VoicePreset, VoiceNote, etc.
-│       ├── data/
-│       │   ├── local/       ← Room DB, DAOs, Entities
-│       │   └── repository/  ← Repository implementations
-│       ├── domain/
-│       │   ├── repository/  ← Repository interfaces
-│       │   └── usecase/     ← Business logic
-│       └── ui/
-│           ├── theme/       ← Colors, Typography, Theme
-│           ├── home/        ← Home screen
-│           ├── picker/      ← File picker screen
-│           ├── history/     ← WhatsApp history screen
-│           ├── recorder/    ← Recording screen
-│           ├── upload/      ← Upload/progress screen
-│           └── preview/     ← Preview + share screen
+Android device must stay lightweight.
+
+Heavy processing must run remotely.
+
+---
+
+# Target Android
+
+Current supported:
+
+| Setting     | Value |
+| ----------- | ----: |
+| Min SDK     |    26 |
+| Target SDK  |    35 |
+| Compile SDK |    35 |
+
+Android support:
+
+```txt
+Android 8 → Android 15
 ```
 
-## Workflow & States
+Target packages:
 
-### User Flow
-```
-Home → Select Preset → [Original → Preview] / [Child/Teen/Adult → Record]
-                                                          ↓
-                                                    Upload (GitHub)
-                                                          ↓
-                                                    Poll for result
-                                                          ↓
-                                                    Download → Preview
-                                                          ↓
-                                              Share to WhatsApp (Intent)
+```txt
+com.whatsapp
+com.whatsapp.w4b
 ```
 
-### Recording States
-```
-Idle → Recording → Recorded → [Delete → Idle] / [Use → Preview/Upload]
+---
+
+# Architecture
+
+```txt
+┌──────────────────────┐
+│ Android App          │
+│ Kotlin + Compose     │
+└──────────┬───────────┘
+           │
+           │ upload
+           ▼
+┌──────────────────────┐
+│ GitHub API           │
+│ Releases + Dispatch  │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ GitHub Actions       │
+│ Build + Voice Engine │
+└──────────┬───────────┘
+           │
+           ▼
+┌──────────────────────┐
+│ Download Result      │
+└──────────────────────┘
 ```
 
-### Upload (Job) States
-```
-UPLOADING → QUEUED → PROCESSING → COMPLETED
-                                      ↓ (if fail)
-                                    FAILED → Retry
-```
+---
 
-## Code Conventions
+# Local Laptop Policy
 
-1. **Clean Architecture**: core → data → domain → ui (one-way dependency)
-2. **Hilt DI**: All dependencies in `di/AppModule.kt` or `@Inject constructor`
-3. **ViewModels**: `AndroidViewModel` or `ViewModel` with Hilt, expose `StateFlow`
-4. **State**: Use `sealed interface` for complex states (see `RecordingState`)
-5. **Error Handling**: Return `Result<T>` from repositories, catch in ViewModels
-6. **Coroutines**: `viewModelScope.launch` for UI, `Dispatchers.IO` for network/disk
-7. **Compose**: Stateless screens + state hoisting to ViewModel
-8. **Navigation**: 7 routes defined in `NavGraph.kt`, pass primitives only
-9. **No local AI processing**: Never run heavy inference on device
+Primary goal:
 
-## Build & Run
+Laptop stays lightweight.
+
+Laptop responsibilities:
+
+- edit code
+- refactor
+- generate code
+- review
+- AGENTS.md update
+- git commit
+- git push
+
+Allowed:
 
 ```bash
-# Debug APK
-./gradlew assembleDebug
+git status
+git add .
+git commit
+git push
 
-# Install to device
-./gradlew installDebug
-
-# Clean build
-./gradlew clean assembleDebug
-
-# Release APK (requires signing config)
-./gradlew assembleRelease
+./gradlew tasks
+./gradlew help
+./gradlew dependencies
 ```
 
-### Prerequisites
-- JDK 17
-- Android SDK 34
-- `local.properties` with `github.token`, `github.owner`, `sdk.dir`
-- GitHub Personal Access Token with `repo` and `workflow` scopes
+Never auto-run locally:
 
-## GitHub Actions
+```bash
+./gradlew assembleDebug
+./gradlew assembleRelease
+./gradlew bundleRelease
+./gradlew lint
+./gradlew test
+./gradlew connectedCheck
+```
 
-### voice-convert.yml
-- Trigger: `repository_dispatch` with type `voice-convert`
-- Receives: `release_id`, `preset`, `session_id` via `client_payload`
-- Steps:
-  1. Checkout + Setup Python + Install ffmpeg
-  2. Download input from Release asset
-  3. Run `convert.py` (ffmpeg pitch shift)
-  4. Upload result back to Release
-  5. Upload artifact fallback
+unless user explicitly asks.
 
-### Secret Required
-- `VOICEFX_TOKEN`: GitHub PAT with `repo` scope
+OpenCode must prioritize:
 
-### convert.py
-- Downloads input asset from Release by `release_id`
-- Applies pitch shift via ffmpeg (atempo + asetrate filters)
-- Uploads result OGG/Opus as new Release asset
-- Cleanup: removes temp files
+- low RAM
+- low CPU
+- fast response
 
-## Voice Presets
+---
 
-| Preset | Pitch Factor | Processing Location |
-|--------|-------------|-------------------|
-| Original | 1.0x | Local (none) |
-| Child | 1.6x | GitHub Runner |
-| Teen | 1.3x | GitHub Runner |
-| Adult Female | 1.12x | GitHub Runner |
+# GitHub Actions Policy
 
-Original preset bypasses upload entirely — goes straight to preview.
+All heavy work runs remotely.
 
-## MVP Scope
+GitHub Actions handles:
 
-Done:
-- [x] Voice preset selection
-- [x] Audio recording with timer
-- [x] File picking from storage/SD card
-- [x] WhatsApp history scanning
-- [x] Upload to GitHub + poll + download
-- [x] GitHub Actions workflow + conversion script
-- [x] Preview with play/pause + progress
-- [x] Share to WhatsApp as voice note
-- [x] Room DB for history caching
+Android:
 
-Post-MVP:
-- [ ] Floating overlay for quick access
-- [ ] Custom user presets
-- [ ] OpenVoice / RVC / XTTS integration
-- [ ] Magisk / Zygisk plugin
-- [ ] Multiple language support
-- [ ] Settings screen for GitHub config
+- assembleDebug
+- assembleRelease
+- bundleRelease
+- lint
+- unit tests
+- dependency cache
+- APK upload
+- Release upload
 
-## Role: AI Agent Instructions
+Voice:
 
-When modifying code in this project:
+- ffmpeg
+- OpenVoice v2
+- RVC
+- OGG/Opus encoding
 
-1. **NEVER** add heavy processing to the Android app. All voice processing must go through GitHub Actions.
-2. **NEVER** hardcode `github.token` — always use BuildConfig fields from `local.properties`.
-3. **ALWAYS** use `ContentResolver` for content:// URIs (not `File(uri.path)`).
-4. **KEEP** the ViewModel → UseCase → Repository → DataSource pattern.
-5. **ADD** error handling for network failures, permission denials, and file access.
-6. **USE** Material 3 components for all UI.
-7. **MAINTAIN** the sealed interface pattern for states.
-8. **PRESERVE** the existing navigation routes when adding new screens.
-9. **TEST** with preset `ORIGINAL` first (no network needed) before testing server processing.
-10. **ENSURE** all Coroutines use proper scopes — no `GlobalScope`.
+Never heavy build locally.
+
+---
+
+# Required Workflows
+
+```txt
+.github/workflows/
+
+android-debug.yml
+android-release.yml
+voice-convert.yml
+```
+
+---
+
+# android-debug.yml
+
+Trigger:
+
+```txt
+push
+pull_request
+workflow_dispatch
+```
+
+Tasks:
+
+- setup JDK 17
+- Android SDK
+- Gradle cache
+- assembleDebug
+- upload APK artifact
+
+Artifact:
+
+```txt
+voicefx-debug.apk
+```
+
+---
+
+# android-release.yml
+
+Trigger:
+
+```txt
+workflow_dispatch
+tag push
+```
+
+Tasks:
+
+- assembleRelease
+- bundleRelease
+- sign APK
+- upload GitHub Release
+
+Assets:
+
+```txt
+voicefx-release.apk
+voicefx-release.aab
+mapping.txt
+```
+
+---
+
+# Voice Conversion Engine
+
+Heavy conversion must run remotely only.
+
+Android never runs inference.
+
+Priority:
+
+## 1 — ffmpeg
+
+MVP
+
+Use:
+
+- pitch shift
+- formant shift
+- normalize
+- encode
+
+Fast and stable.
+
+---
+
+## 2 — OpenVoice v2
+
+Primary AI engine.
+
+Use for:
+
+- male → female
+- child
+- teen
+- adult female
+- user reference audio
+- WhatsApp history reference
+
+---
+
+## 3 — RVC
+
+Optional advanced cloning.
+
+Use for:
+
+- user voice from storage
+- user voice from SD card
+- WhatsApp history voice note
+
+---
+
+## 4 — XTTS
+
+Future only.
+
+Not required now.
+
+Output:
+
+```txt
+audio/ogg
+audio/opus
+```
+
+WhatsApp compatible.
+
+---
+
+# Android Responsibilities
+
+Allowed:
+
+- UI
+- overlay
+- recorder
+- preview
+- upload
+- download
+- cache
+- Room DB
+- WorkManager
+- CameraX
+- location
+- permission handling
+- WhatsApp share
+
+Forbidden:
+
+- local AI inference
+- TensorFlow Lite
+- PyTorch Android
+- heavy DSP
+- model download
+
+---
+
+# Overlay Requirements
+
+Create:
+
+```txt
+VoiceFxOverlayService
+```
+
+Permission:
+
+```txt
+SYSTEM_ALERT_WINDOW
+FOREGROUND_SERVICE
+POST_NOTIFICATIONS
+```
+
+Rules:
+
+- draggable
+- restore position
+- long press hide
+- show only when WhatsApp foreground
+- show for WA Business
+- persistent
+
+Quick panel:
+
+```txt
+🎙 VoiceFX
+
+Original
+Child
+Teen
+Adult Female
+
+📁 Internal Storage
+💾 SD Card
+💬 WhatsApp Voice Notes
+
+📍 Location
+📷 Camera
+
+⚙ Settings
+```
+
+---
+
+# Background Execution
+
+Must continue when:
+
+- app closed
+- user in WhatsApp
+- screen locked
+
+Use:
+
+```txt
+ForegroundService
+WorkManager
+BootReceiver
+```
+
+Permissions:
+
+```txt
+RECEIVE_BOOT_COMPLETED
+WAKE_LOCK
+```
+
+Restore overlay after reboot.
+
+Restore upload queue.
+
+Continue polling.
+
+---
+
+# Audio Sources
+
+Allow:
+
+```txt
+wav
+ogg
+opus
+aac
+m4a
+mp3
+```
+
+Sources:
+
+- microphone
+- internal storage
+- SD card
+- WhatsApp history
+
+---
+
+# WhatsApp History Scan
+
+Search:
+
+```txt
+/storage/emulated/0/Android/media/com.whatsapp/
+
+/storage/emulated/0/Android/media/com.whatsapp.w4b/
+```
+
+Read:
+
+```txt
+.opus
+```
+
+Always:
+
+```txt
+ContentResolver
+DocumentFile
+MediaStore
+```
+
+Never:
+
+```txt
+File(uri.path)
+```
+
+---
+
+# WhatsApp Output
+
+Must send:
+
+```txt
+audio/ogg
+audio/opus
+```
+
+Use:
+
+```txt
+Intent.ACTION_SEND
+```
+
+Packages:
+
+```txt
+com.whatsapp
+com.whatsapp.w4b
+```
+
+Receiver sees normal WhatsApp voice note.
+
+---
+
+# Location
+
+Use:
+
+```txt
+FusedLocationProviderClient
+```
+
+Permissions:
+
+```txt
+ACCESS_COARSE_LOCATION
+ACCESS_FINE_LOCATION
+FOREGROUND_SERVICE_LOCATION
+```
+
+Rules:
+
+- ask only when needed
+- cache last known
+- low power first
+- fallback if denied
+
+---
+
+# Camera
+
+Use:
+
+```txt
+CameraX
+```
+
+Dependencies:
+
+- camera-core
+- camera-camera2
+- camera-lifecycle
+- camera-view
+
+Permission:
+
+```txt
+CAMERA
+```
+
+Rules:
+
+- runtime request
+- preview
+- capture
+- cache
+- cleanup
+
+---
+
+# Local Cache
+
+Use:
+
+```txt
+/Android/data/com.voicefx/cache/
+```
+
+Store:
+
+- temp record
+- temp upload
+- temp download
+- preview
+- camera
+
+Auto cleanup.
+
+---
+
+# Tech Stack
+
+| Component              | Choice        |
+| ---------------------- | ------------- |
+| Kotlin                 | 1.9 stable    |
+| Compose                | latest stable |
+| Material3              | latest stable |
+| Navigation             | latest stable |
+| Hilt                   | stable        |
+| Room                   | stable        |
+| OkHttp                 | stable        |
+| Media3                 | stable        |
+| CameraX                | stable        |
+| Play Services Location | stable        |
+| WorkManager            | stable        |
+| Gradle                 | latest stable |
+
+---
+
+# Project Structure
+
+```txt
+voicefx/
+
+.github/
+  workflows/
+  scripts/
+
+app/
+
+core/
+audio/
+camera/
+location/
+overlay/
+storage/
+whatsapp/
+network/
+queue/
+model/
+
+data/
+local/
+repository/
+
+domain/
+repository/
+usecase/
+
+ui/
+home/
+picker/
+history/
+recorder/
+upload/
+preview/
+settings/
+```
+
+---
+
+# State Rules
+
+Use:
+
+```txt
+sealed interface
+StateFlow
+```
+
+Examples:
+
+```txt
+RecordingState
+UploadState
+OverlayState
+PermissionState
+PreviewState
+```
+
+No UI business logic inside Compose.
+
+---
+
+# Coroutines
+
+Use:
+
+```txt
+viewModelScope
+Dispatchers.IO
+```
+
+Never:
+
+```txt
+GlobalScope
+```
+
+---
+
+# Error Handling
+
+Always handle:
+
+- permission denied
+- GitHub rate limit
+- upload fail
+- download fail
+- invalid URI
+- WhatsApp missing
+- playback fail
+- network fail
+
+Repository returns:
+
+```txt
+Result<T>
+```
+
+---
+
+# Documentation Rule
+
+AGENTS.md is source of truth.
+
+When changing:
+
+- architecture
+- dependencies
+- SDK
+- workflow
+- permissions
+- engine
+- feature
+
+Always:
+
+1 update AGENTS.md
+
+2 update code
+
+Never leave AGENTS.md outdated.
+
+---
+
+# AI Agent Rules
+
+When working:
+
+1. Read AGENTS.md first
+2. Follow architecture
+3. Keep Android lightweight
+4. Never heavy build local
+5. Use GitHub Actions
+6. Use BuildConfig/env vars
+7. Never hardcode token
+8. Keep Material3
+9. Use latest stable APIs
+10. Use full runnable code
+11. No pseudo code
+12. Support WhatsApp + Business
+13. Preserve native WhatsApp voice-note compatibility
+14. Ask minimal clarification
+15. Update AGENTS.md when project changes
+16. Production-ready only
