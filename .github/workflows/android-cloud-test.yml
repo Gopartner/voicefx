@@ -1,0 +1,123 @@
+name: Android Cloud Test (Genymotion)
+
+on:
+  workflow_dispatch:
+    inputs:
+      instance_timeout:
+        description: 'How many minutes to keep the instance alive'
+        default: '15'
+        required: false
+
+jobs:
+  cloud-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Create local.properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "github.token=${{ secrets.VOICEFX_TOKEN }}" >> local.properties
+          echo "github.owner=${{ github.repository_owner }}" >> local.properties
+          echo "github.repo=${{ github.event.repository.name }}" >> local.properties
+
+      - name: Grant Gradle execution permission
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Install gmsaas CLI
+        run: pip3 install gmsaas
+
+      - name: Authenticate with Genymotion Cloud
+        env:
+          GENYMOUTH_TOKEN: ${{ secrets.GENYMOTION_TOKEN }}
+        run: gmsaas auth token "$GENYMOUTH_TOKEN"
+
+      - name: Start Genymotion instance
+        id: start_instance
+        run: |
+          recipe=$(gmsaas recipes list --format json | python3 -c "
+import json, sys
+recipes = json.load(sys.stdin)
+# Pick the first available recipe (e.g. Samsung Galaxy S10)
+for r in recipes:
+    if 'samsung' in r.get('name', '').lower() or 'pixel' in r.get('name', '').lower():
+        print(r['uuid'])
+        sys.exit(0)
+print(recipes[0]['uuid'])
+          ")
+          echo "recipe=$recipe"
+          instance=$(gmsaas instances start "$recipe" "voicefx-test-${{ github.run_number }}" --format json)
+          uuid=$(echo "$instance" | python3 -c "import json,sys; print(json.load(sys.stdin)['uuid'])")
+          echo "uuid=$uuid"
+          echo "uuid=$uuid" >> $GITHUB_OUTPUT
+          echo "instance_uuid=$uuid" >> $GITHUB_ENV
+          adb=$(echo "$instance" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['adb_serial']} {d['adb_ip']}:{d['adb_port']}\")")
+          echo "adb=$adb"
+          echo "ADB_SERIAL=$(echo $adb | cut -d' ' -f1)" >> $GITHUB_ENV
+
+      - name: Wait for boot
+        run: |
+          echo "Waiting for device to boot..."
+          gmsaas instances adbconnect "${{ env.ADB_SERIAL }}" || true
+          for i in $(seq 1 30); do
+            if adb shell getprop sys.boot_completed 2>/dev/null | grep -q '1'; then
+              echo "Device booted!"
+              break
+            fi
+            echo "Waiting... ($i/30)"
+            sleep 5
+          done
+
+      - name: Install APK
+        run: |
+          adb install app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Smoke test - launch app
+        run: |
+          adb shell am start -n com.voicefx/.MainActivity
+          sleep 3
+          adb shell pidof com.voicefx && echo "APP IS RUNNING" || echo "APP NOT FOUND"
+          adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' || true
+
+      - name: Print web URL
+        run: |
+          echo ""
+          echo "============================================"
+          echo " Genymotion instance is running!"
+          echo " Instance UUID: ${{ env.instance_uuid }}"
+          echo " Open in browser: https://cloud.geny.io/"
+          echo " APK installed: app-debug.apk"
+          echo " Instance auto-stops in ${{ github.event.inputs.instance_timeout || 15 }} min"
+          echo "============================================"
+          echo ""
+          echo "To connect via ADB manually:"
+          echo "  gmsaas instances adbconnect ${{ env.ADB_SERIAL }}"
+          echo ""
+
+      - name: Keep alive
+        if: always()
+        run: |
+          timeout_minutes=${{ github.event.inputs.instance_timeout || 15 }}
+          echo "Keeping instance alive for $timeout_minutes minutes..."
+          sleep $((timeout_minutes * 60))
+
+      - name: Stop Genymotion instance
+        if: always()
+        run: |
+          gmsaas instances stop "${{ env.instance_uuid }}"
+          echo "Instance stopped."
