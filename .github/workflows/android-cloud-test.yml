@@ -42,53 +42,37 @@ jobs:
       - name: Install gmsaas CLI
         run: pip3 install gmsaas
 
-      - name: Authenticate with Genymotion Cloud
+      - name: Authenticate
         env:
-          GENYMOUTH_TOKEN: ${{ secrets.GENYMOTION_TOKEN }}
-        run: gmsaas auth token "$GENYMOUTH_TOKEN"
+          GENYMOTION_TOKEN: ${{ secrets.GENYMOTION_TOKEN }}
+        run: gmsaas auth token "$GENYMOTION_TOKEN"
 
-      - name: Show recipes (debug)
-        run: gmsaas recipes list 2>&1 | head -20
+      - name: Debug recipes output
+        run: gmsaas recipes list 2>&1 | tee /tmp/recipes_raw.txt | python3 .github/scripts/genymotion_utils.py dump
+
+      - name: Debug recipes UUIDs
+        run: python3 .github/scripts/genymotion_utils.py all_uuids < /tmp/recipes_raw.txt
 
       - name: Start Genymotion instance
         id: start_instance
         run: |
-          RECIPE=$(gmsaas recipes list 2>&1 | python3 .github/scripts/genymotion_utils.py pick_recipe)
-          echo "Using recipe: $RECIPE"
-          INSTANCE_UUID=$(gmsaas instances start "$RECIPE" "voicefx-test-${{ github.run_number }}" 2>&1 | python3 .github/scripts/genymotion_utils.py parse_instance)
-          echo "uuid=$INSTANCE_UUID" >> $GITHUB_OUTPUT
-          echo "instance_uuid=$INSTANCE_UUID" >> $GITHUB_ENV
-          echo "Instance started: $INSTANCE_UUID"
+          UUID=$(python3 .github/scripts/genymotion_utils.py first_uuid < /tmp/recipes_raw.txt)
+          echo "Using recipe UUID: $UUID"
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
+          gmsaas instances start "$UUID" "voicefx-test-${{ github.run_number }}" 2>&1 | tee /tmp/instance_output.txt
 
-      - name: Connect ADB and wait for boot
+      - name: Debug instance output
         run: |
-          gmsaas instances adbconnect "${{ steps.start_instance.outputs.uuid }}" || true
-          for i in $(seq 1 30); do
-            if adb shell getprop sys.boot_completed 2>/dev/null | grep -q '1'; then
-              echo "Device booted!"
-              break
-            fi
-            echo "Waiting... ($i/30)"
-            sleep 5
-          done
+          echo "=== Raw output ==="
+          python3 .github/scripts/genymotion_utils.py dump < /tmp/instance_output.txt
+          echo "=== UUIDs ==="
+          python3 .github/scripts/genymotion_utils.py all_uuids < /tmp/instance_output.txt
 
-      - name: Install APK
-        run: adb install app/build/outputs/apk/debug/app-debug.apk
+      - name: Connect ADB
+        run: gmsaas instances adbconnect "${{ steps.start_instance.outputs.uuid }}" 2>&1 || true
 
-      - name: Smoke test
-        run: |
-          adb shell am start -n com.voicefx/.MainActivity
-          sleep 3
-          adb shell pidof com.voicefx && echo "APP IS RUNNING" || echo "APP NOT FOUND"
-
-      - name: Print web URL
-        run: |
-          echo ""
-          echo "============================================"
-          echo " Genymotion instance is running!"
-          echo " Instance UUID: ${{ steps.start_instance.outputs.uuid }}"
-          echo " Open in browser: https://cloud.geny.io/"
-          echo "============================================"
+      - name: List ADB devices
+        run: adb devices -l 2>&1 || true
 
       - name: Keep alive
         if: always()
@@ -96,4 +80,4 @@ jobs:
 
       - name: Stop Genymotion instance
         if: always()
-        run: gmsaas instances stop "${{ steps.start_instance.outputs.uuid }}"
+        run: gmsaas instances stop "${{ steps.start_instance.outputs.uuid }}" 2>&1 || true
