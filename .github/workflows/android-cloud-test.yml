@@ -50,25 +50,20 @@ jobs:
       - name: Start Genymotion instance
         id: start_instance
         run: |
-          recipe=$(gmsaas recipes list --format json | python3 -c "
-import json, sys
-recipes = json.load(sys.stdin)
-# Pick the first available recipe (e.g. Samsung Galaxy S10)
-for r in recipes:
-    if 'samsung' in r.get('name', '').lower() or 'pixel' in r.get('name', '').lower():
-        print(r['uuid'])
-        sys.exit(0)
-print(recipes[0]['uuid'])
-          ")
-          echo "recipe=$recipe"
-          instance=$(gmsaas instances start "$recipe" "voicefx-test-${{ github.run_number }}" --format json)
-          uuid=$(echo "$instance" | python3 -c "import json,sys; print(json.load(sys.stdin)['uuid'])")
-          echo "uuid=$uuid"
-          echo "uuid=$uuid" >> $GITHUB_OUTPUT
-          echo "instance_uuid=$uuid" >> $GITHUB_ENV
-          adb=$(echo "$instance" | python3 -c "import json,sys; d=json.load(sys.stdin); print(f\"{d['adb_serial']} {d['adb_ip']}:{d['adb_port']}\")")
-          echo "adb=$adb"
-          echo "ADB_SERIAL=$(echo $adb | cut -d' ' -f1)" >> $GITHUB_ENV
+          RECIPES=$(gmsaas recipes list --format json)
+          RECIPE=$(echo "$RECIPES" | jq -r '.[0].uuid')
+          echo "Using recipe: $RECIPE"
+
+          INSTANCE=$(gmsaas instances start "$RECIPE" "voicefx-test-${{ github.run_number }}" --format json)
+          UUID=$(echo "$INSTANCE" | jq -r '.uuid')
+          ADB_SERIAL=$(echo "$INSTANCE" | jq -r '.adb_serial')
+          ADB_IP=$(echo "$INSTANCE" | jq -r '.adb_ip')
+          ADB_PORT=$(echo "$INSTANCE" | jq -r '.adb_port')
+
+          echo "uuid=$UUID" >> $GITHUB_OUTPUT
+          echo "instance_uuid=$UUID" >> $GITHUB_ENV
+          echo "ADB_SERIAL=$ADB_SERIAL" >> $GITHUB_ENV
+          echo "Instance started: $UUID (ADB $ADB_IP:$ADB_PORT)"
 
       - name: Wait for boot
         run: |
