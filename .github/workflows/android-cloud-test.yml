@@ -47,28 +47,22 @@ jobs:
           GENYMOUTH_TOKEN: ${{ secrets.GENYMOTION_TOKEN }}
         run: gmsaas auth token "$GENYMOUTH_TOKEN"
 
+      - name: Show recipes (debug)
+        run: gmsaas recipes list 2>&1 | head -20
+
       - name: Start Genymotion instance
         id: start_instance
         run: |
-          RECIPES=$(gmsaas recipes list --format json)
-          RECIPE=$(echo "$RECIPES" | jq -r '.[0].uuid')
+          RECIPE=$(gmsaas recipes list 2>&1 | python3 .github/scripts/genymotion_utils.py pick_recipe)
           echo "Using recipe: $RECIPE"
+          INSTANCE_UUID=$(gmsaas instances start "$RECIPE" "voicefx-test-${{ github.run_number }}" 2>&1 | python3 .github/scripts/genymotion_utils.py parse_instance)
+          echo "uuid=$INSTANCE_UUID" >> $GITHUB_OUTPUT
+          echo "instance_uuid=$INSTANCE_UUID" >> $GITHUB_ENV
+          echo "Instance started: $INSTANCE_UUID"
 
-          INSTANCE=$(gmsaas instances start "$RECIPE" "voicefx-test-${{ github.run_number }}" --format json)
-          UUID=$(echo "$INSTANCE" | jq -r '.uuid')
-          ADB_SERIAL=$(echo "$INSTANCE" | jq -r '.adb_serial')
-          ADB_IP=$(echo "$INSTANCE" | jq -r '.adb_ip')
-          ADB_PORT=$(echo "$INSTANCE" | jq -r '.adb_port')
-
-          echo "uuid=$UUID" >> $GITHUB_OUTPUT
-          echo "instance_uuid=$UUID" >> $GITHUB_ENV
-          echo "ADB_SERIAL=$ADB_SERIAL" >> $GITHUB_ENV
-          echo "Instance started: $UUID (ADB $ADB_IP:$ADB_PORT)"
-
-      - name: Wait for boot
+      - name: Connect ADB and wait for boot
         run: |
-          echo "Waiting for device to boot..."
-          gmsaas instances adbconnect "${{ env.ADB_SERIAL }}" || true
+          gmsaas instances adbconnect "${{ steps.start_instance.outputs.uuid }}" || true
           for i in $(seq 1 30); do
             if adb shell getprop sys.boot_completed 2>/dev/null | grep -q '1'; then
               echo "Device booted!"
@@ -79,40 +73,27 @@ jobs:
           done
 
       - name: Install APK
-        run: |
-          adb install app/build/outputs/apk/debug/app-debug.apk
+        run: adb install app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Smoke test - launch app
+      - name: Smoke test
         run: |
           adb shell am start -n com.voicefx/.MainActivity
           sleep 3
           adb shell pidof com.voicefx && echo "APP IS RUNNING" || echo "APP NOT FOUND"
-          adb shell dumpsys window windows | grep -E 'mCurrentFocus|mFocusedApp' || true
 
       - name: Print web URL
         run: |
           echo ""
           echo "============================================"
           echo " Genymotion instance is running!"
-          echo " Instance UUID: ${{ env.instance_uuid }}"
+          echo " Instance UUID: ${{ steps.start_instance.outputs.uuid }}"
           echo " Open in browser: https://cloud.geny.io/"
-          echo " APK installed: app-debug.apk"
-          echo " Instance auto-stops in ${{ github.event.inputs.instance_timeout || 15 }} min"
           echo "============================================"
-          echo ""
-          echo "To connect via ADB manually:"
-          echo "  gmsaas instances adbconnect ${{ env.ADB_SERIAL }}"
-          echo ""
 
       - name: Keep alive
         if: always()
-        run: |
-          timeout_minutes=${{ github.event.inputs.instance_timeout || 15 }}
-          echo "Keeping instance alive for $timeout_minutes minutes..."
-          sleep $((timeout_minutes * 60))
+        run: sleep $(( ${{ github.event.inputs.instance_timeout || 15 }} * 60 ))
 
       - name: Stop Genymotion instance
         if: always()
-        run: |
-          gmsaas instances stop "${{ env.instance_uuid }}"
-          echo "Instance stopped."
+        run: gmsaas instances stop "${{ steps.start_instance.outputs.uuid }}"
